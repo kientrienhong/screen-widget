@@ -124,7 +124,18 @@ if ($running) {
   Start-Sleep -Milliseconds 800
 }
 
-Invoke-Step 5 "compile_$Mode" "Compiling ($Mode)" "flutter build windows --$Mode" `
+# Commit the build comes from (shown at the bottom of Settings); "+" = uncommitted changes.
+$buildId = 'dev'
+try {
+  $sha = (git rev-parse --short HEAD 2>$null)
+  if ($LASTEXITCODE -eq 0 -and $sha) {
+    $buildId = $sha.Trim()
+    git diff --quiet HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) { $buildId = "$buildId+" }
+  }
+} catch {}
+
+Invoke-Step 5 "compile_$Mode" "Compiling ($Mode, $buildId)" "flutter build windows --$Mode --dart-define=BUILD_ID=$buildId" `
   'If the log mentions Visual Studio: install Visual Studio with the "Desktop development with C++" workload.'
 
 $exe = Get-ChildItem -Path 'build\windows' -Recurse -Filter 'screen_widget.exe' -ErrorAction SilentlyContinue |

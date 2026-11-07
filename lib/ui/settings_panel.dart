@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../assets_loader.dart';
+import '../build_info.dart';
 import '../desktop.dart';
 import '../engine/scene_painter.dart';
 import '../scenes.dart';
@@ -266,7 +267,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                 padding: EdgeInsets.fromLTRB(18, 12, 18, 20),
                 child: Text(
                   'Shortcuts: 1 2 3 switch view · T transparent background · L lock · , settings · N new window · Esc close.\n'
-                  'Right-click the scene to open settings. Drag anywhere to move the window.',
+                  'Right-click the scene to open settings. Drag anywhere to move the window.\n'
+                  'Build $kBuildId',
                   style: TextStyle(fontSize: 11, color: kMuted, height: 1.6),
                 ),
               ),

@@ -127,9 +127,18 @@ launch_app() {
   open -n "$1"
 }
 
+# Commit the build comes from (shown at the bottom of Settings); "+" = uncommitted changes.
+build_id() {
+  local id
+  id=$(git rev-parse --short HEAD 2>/dev/null) || id=dev
+  [ "$id" != dev ] && ! git diff --quiet HEAD 2>/dev/null && id="$id+"
+  echo "$id"
+}
+
 compile() {
   bash tool/fix_macos_target.sh
-  flutter build macos "--$MODE"
+  echo "Build id: $(build_id)"
+  flutter build macos "--$MODE" --dart-define=BUILD_ID="$(build_id)"
 }
 
 echo

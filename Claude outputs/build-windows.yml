@@ -1,18 +1,39 @@
-# Builds the Windows app on GitHub's Windows machines, so you can get a .exe
-# without a Windows PC. Run it from the repo's Actions tab ("Run workflow"),
-# or push a tag like v1.0.0. Download the zip from the run's "Artifacts".
+# Builds the Windows app on GitHub's Windows machines.
+#
+# Runs automatically on every push to master/main (or start it from
+# Actions → "Build Windows .exe" → "Run workflow"). The zip is named after the
+# commit it was built from, and the app shows the same code at the bottom of
+# Settings, so you can always tell which version you have.
+#
+# Note: "Re-run jobs" on an old run rebuilds THAT run's old commit.
+# To build your latest code, push it or use "Run workflow".
 name: Build Windows .exe
+run-name: ${{ github.event.head_commit.message || format('Manual build of {0}', github.ref_name) }}
 
 on:
-  workflow_dispatch:
   push:
+    branches: [master, main]
     tags: ['v*']
+    paths-ignore: ['**.md', '*.html']
+  workflow_dispatch:
+
+# A newer push cancels a build that is still running for an older commit.
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Commit id
+        shell: pwsh
+        run: |
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          "SHORT_SHA=$short" >> $env:GITHUB_ENV
+          Write-Host "Building commit $short"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -28,15 +49,15 @@ jobs:
 
       - run: flutter pub get
 
-      - run: flutter build windows --release
+      - run: flutter build windows --release --dart-define=BUILD_ID=${{ env.SHORT_SHA }}
 
       - name: Zip the app folder
         shell: pwsh
         run: |
           $exe = Get-ChildItem build\windows -Recurse -Filter screen_widget.exe | Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
-          Compress-Archive -Path (Join-Path $exe.DirectoryName '*') -DestinationPath ScreenWidget-windows.zip
+          Compress-Archive -Path (Join-Path $exe.DirectoryName '*') -DestinationPath "ScreenWidget-windows-$env:SHORT_SHA.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ScreenWidget-windows
-          path: ScreenWidget-windows.zip
+          name: ScreenWidget-windows-${{ env.SHORT_SHA }}
+          path: ScreenWidget-windows-${{ env.SHORT_SHA }}.zip
