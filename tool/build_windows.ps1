@@ -3,13 +3,14 @@
 
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1                debug build, then launch
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release       release build, then open its folder
+    powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release -Zip  release build + build\ScreenWidget-windows.zip
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -SkipAnalyze
 
   Every step's full output goes to build\logs\<step>.log. The % shown for a
   step is estimated from how long that step took last time (first build: elapsed time only).
   Works in Windows PowerShell 5.1 and PowerShell 7.
 #>
-param([switch]$Release, [switch]$SkipAnalyze)
+param([switch]$Release, [switch]$Zip, [switch]$SkipAnalyze)
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -123,6 +124,13 @@ Write-Progress -Activity $Activity -Completed
 if (-not $exe) {
   Write-Result 'FAIL' 'Red' 6 'Launching app' 'could not find screen_widget.exe under build\windows'
   exit 1
+}
+if ($Zip) {
+  # The .exe needs the DLLs and data\ folder next to it, so ship the whole folder.
+  $zipPath = 'build\ScreenWidget-windows.zip'
+  if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+  Compress-Archive -Path (Join-Path $exe.DirectoryName '*') -DestinationPath $zipPath
+  Write-Result 'OK' 'Green' 6 'Zipping app' $zipPath
 }
 if ($Release) {
   Start-Process explorer.exe -ArgumentList "/select,`"$($exe.FullName)`""

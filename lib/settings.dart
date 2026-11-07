@@ -29,6 +29,9 @@ class AppSettings extends ChangeNotifier {
   bool launchAtLogin = false;
   bool showFps = false;
 
+  /// Lock = click-through: mouse clicks pass to the apps behind the window.
+  bool locked = false;
+
   /// Size & crop. [viewWidth]/[viewHeight] = 0 means "whatever size the window is".
   double viewWidth = 0, viewHeight = 0;
 
@@ -70,6 +73,7 @@ class AppSettings extends ChangeNotifier {
         'alwaysOnTop': alwaysOnTop,
         'launchAtLogin': launchAtLogin,
         'showFps': showFps,
+        'locked': locked,
         'viewWidth': viewWidth,
         'viewHeight': viewHeight,
         'zoom': zoom,
@@ -88,6 +92,7 @@ class AppSettings extends ChangeNotifier {
     alwaysOnTop = m['alwaysOnTop'] as bool? ?? alwaysOnTop;
     launchAtLogin = m['launchAtLogin'] as bool? ?? launchAtLogin;
     showFps = m['showFps'] as bool? ?? showFps;
+    locked = m['locked'] as bool? ?? locked;
     viewWidth = (m['viewWidth'] as num?)?.toDouble() ?? viewWidth;
     viewHeight = (m['viewHeight'] as num?)?.toDouble() ?? viewHeight;
     zoom = ((m['zoom'] as num?)?.toDouble() ?? zoom).clamp(0.6, 2.0).toDouble();

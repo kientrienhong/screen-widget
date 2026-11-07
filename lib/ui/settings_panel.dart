@@ -22,6 +22,7 @@ class SettingsPanel extends StatefulWidget {
     required this.onTransparent,
     required this.onAlwaysOnTop,
     required this.onLaunchAtLogin,
+    required this.onLock,
     required this.onResize,
   });
 
@@ -34,6 +35,7 @@ class SettingsPanel extends StatefulWidget {
   final ValueChanged<bool> onTransparent;
   final ValueChanged<bool> onAlwaysOnTop;
   final ValueChanged<bool> onLaunchAtLogin;
+  final ValueChanged<bool> onLock;
 
   /// Resize the window to an exact size (logical pixels).
   final void Function(double w, double h) onResize;
@@ -241,6 +243,13 @@ class _SettingsPanelState extends State<SettingsPanel> {
 
               // ---- Window ----
               PanelSection(title: 'Window', children: [
+                ToggleRow(
+                  label: 'Lock (click-through)',
+                  hint: 'Clicks go to the apps behind. Unlock: ${Desktop.lockShortcutLabel}, or hover the top-right corner',
+                  value: s.locked,
+                  onChanged: widget.onLock,
+                  accent: accent,
+                ),
                 ToggleRow(label: 'Always on top', value: s.alwaysOnTop, onChanged: widget.onAlwaysOnTop, accent: accent),
                 ToggleRow(label: 'Launch at login', value: s.launchAtLogin, onChanged: widget.onLaunchAtLogin, accent: accent),
                 ToggleRow(label: 'Show FPS', value: s.showFps, onChanged: (v) => s.update((x) => x.showFps = v), accent: accent),
@@ -256,7 +265,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(18, 12, 18, 20),
                 child: Text(
-                  'Shortcuts: 1 2 3 switch view · T transparent background · , settings · N new window · Esc close.\n'
+                  'Shortcuts: 1 2 3 switch view · T transparent background · L lock · , settings · N new window · Esc close.\n'
                   'Right-click the scene to open settings. Drag anywhere to move the window.',
                   style: TextStyle(fontSize: 11, color: kMuted, height: 1.6),
                 ),

@@ -6,6 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f macos/Podfile ] || exit 0
+before=$(cat macos/Podfile macos/Runner.xcodeproj/project.pbxproj | md5)
 
 sed -i '' -E "s/^platform :osx, '[0-9.]+'/platform :osx, '12.0'/" macos/Podfile
 sed -i '' -E 's/MACOSX_DEPLOYMENT_TARGET = [0-9.]+;/MACOSX_DEPLOYMENT_TARGET = 12.0;/g' macos/Runner.xcodeproj/project.pbxproj
@@ -19,5 +20,10 @@ new = old + ("    target.build_configurations.each do |config|\n"
              "    end\n")
 open(p, 'w').write(s.replace(old, new, 1))
 PY
+fi
+after=$(cat macos/Podfile macos/Runner.xcodeproj/project.pbxproj | md5)
+if [ "$before" != "$after" ] && [ -d macos/Pods ]; then
+  echo "Deployment target changed — regenerating plugin projects (pod install)…"
+  (cd macos && pod install)
 fi
 echo "macOS deployment target: 12.0"

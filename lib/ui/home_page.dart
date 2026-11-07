@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../assets_loader.dart';
@@ -38,6 +41,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   int _fpsFrames = 0;
   String _fpsText = '';
 
+  // ---- Lock (click-through) ----
+  // While locked the window ignores the mouse. To unlock: the global shortcut,
+  // or rest the cursor on the top-right corner until the Unlock button appears.
+  HotKey? _lockKey;
+  Timer? _lockPoll;
+  bool _pollBusy = false;
+  bool _cursorInside = false;
+  bool _unlockArmed = false;
+  double _armProgress = 0;
+  static const _armSeconds = 0.6;
+  static const _pollMs = 150;
+
   AppSettings get s => widget.settings;
 
   @override
@@ -45,6 +60,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     super.initState();
     _ticker = createTicker(_onTick)..start();
     s.addListener(_onSettings);
+    _registerLockShortcut();
+    if (s.locked) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _setLocked(true));
+    }
   }
 
   @override
@@ -52,6 +71,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _ticker.dispose();
     s.removeListener(_onSettings);
     _toastTimer?.cancel();
+    _lockPoll?.cancel();
+    final key = _lockKey;
+    if (key != null) hotKeyManager.unregister(key);
     _focus.dispose();
     _world.dispose();
     super.dispose();
@@ -119,6 +141,77 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
+  Future<void> _registerLockShortcut() async {
+    try {
+      final key = HotKey(
+        key: PhysicalKeyboardKey.keyL,
+        modifiers: [HotKeyModifier.control, HotKeyModifier.alt],
+        scope: HotKeyScope.system,
+      );
+      if (!s.solo) await hotKeyManager.unregisterAll(); // clean up after hot restart
+      await hotKeyManager.register(key, keyDownHandler: (_) => _setLocked(!s.locked));
+      _lockKey = key;
+    } catch (_) {
+      // Another Screen Widget window may own the shortcut already; hover-to-unlock still works.
+    }
+  }
+
+  Future<void> _setLocked(bool v) async {
+    if (v) _setPanel(false);
+    if (s.locked != v) s.update((x) => x.locked = v);
+    _unlockArmed = false;
+    _armProgress = 0;
+    _cursorInside = false;
+    _lockPoll?.cancel();
+    _lockPoll = null;
+    await Desktop.setClickThrough(v);
+    if (v) _lockPoll = Timer.periodic(const Duration(milliseconds: _pollMs), (_) => _pollCursor());
+    _showToast(v
+        ? 'Locked — clicks go to the apps behind. Unlock: ${Desktop.lockShortcutLabel} or hover the top-right corner'
+        : 'Unlocked');
+  }
+
+  /// While locked, watch the cursor (the window itself gets no mouse events):
+  /// show the lock badge when the cursor is over the window, and after a short
+  /// hover on the top-right corner turn mouse input back on so Unlock can be clicked.
+  Future<void> _pollCursor() async {
+    if (_pollBusy || !s.locked || !mounted) return;
+    _pollBusy = true;
+    try {
+      final b = await windowManager.getBounds();
+      final p = await screenRetriever.getCursorScreenPoint();
+      final inside = b.contains(p);
+      final zoneW = _unlockArmed ? 150.0 : 64.0;
+      final over = Rect.fromLTWH(b.right - zoneW, b.top, zoneW, 64).contains(p);
+      var armed = _unlockArmed;
+      var progress = _armProgress;
+      if (over) {
+        progress = math.min(1.0, progress + _pollMs / 1000 / _armSeconds);
+        if (progress >= 1 && !armed) {
+          armed = true;
+          await Desktop.setClickThrough(false);
+        }
+      } else {
+        progress = 0;
+        if (armed) {
+          armed = false;
+          await Desktop.setClickThrough(true);
+        }
+      }
+      if (mounted && (inside != _cursorInside || armed != _unlockArmed || progress != _armProgress)) {
+        setState(() {
+          _cursorInside = inside;
+          _unlockArmed = armed;
+          _armProgress = progress;
+        });
+      }
+    } catch (_) {
+      // Ignore a missed poll; the next one retries.
+    } finally {
+      _pollBusy = false;
+    }
+  }
+
   Future<void> _resize(double w, double h) async {
     s.update((x) {
       x.viewWidth = w;
@@ -144,6 +237,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       _setTransparent(!s.transparent);
     } else if (k == LogicalKeyboardKey.comma) {
       _setPanel(!_panelOpen);
+    } else if (k == LogicalKeyboardKey.keyL) {
+      _setLocked(!s.locked);
     } else if (k == LogicalKeyboardKey.keyN) {
       _popOut(s.scene);
     } else if (k == LogicalKeyboardKey.escape) {
@@ -192,13 +287,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               left: 0,
               right: 0,
               child: AnimatedOpacity(
-                opacity: transparent && !_hover && !_panelOpen ? 0 : 1,
+                opacity: s.locked || (transparent && !_hover && !_panelOpen) ? 0 : 1,
                 duration: const Duration(milliseconds: 250),
                 child: SceneTitleBar(
                   title: 'Screen Widget',
                   subtitle: sc.name,
                   transparent: transparent,
                   panelOpen: _panelOpen,
+                  onLock: () => _setLocked(true),
                   onSettings: () => _setPanel(!_panelOpen),
                   onPopOut: () => _popOut(s.scene),
                   onTransparent: () => _setTransparent(!transparent),
@@ -226,6 +322,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   onTransparent: _setTransparent,
                   onAlwaysOnTop: _setAlwaysOnTop,
                   onLaunchAtLogin: _setLaunchAtLogin,
+                  onLock: _setLocked,
                   onResize: _resize,
                 ),
               ),
@@ -239,6 +336,56 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(color: const Color(0x59000000), borderRadius: BorderRadius.circular(6)),
                   child: Text(_fpsText, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
+              ),
+
+            // Lock badge: invisible until the cursor is over the window.
+            if (s.locked)
+              Positioned(
+                top: 10,
+                right: 10,
+                child: AnimatedOpacity(
+                  opacity: _unlockArmed ? 1 : (_cursorInside ? 0.6 : 0),
+                  duration: const Duration(milliseconds: 200),
+                  child: _unlockArmed
+                      ? Material(
+                          color: const Color(0xE6191E2D),
+                          borderRadius: BorderRadius.circular(20),
+                          child: InkWell(
+                            onTap: () => _setLocked(false),
+                            borderRadius: BorderRadius.circular(20),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.lock_open, size: 16, color: Colors.white),
+                                SizedBox(width: 6),
+                                Text('Unlock', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ]),
+                            ),
+                          ),
+                        )
+                      : SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Stack(alignment: Alignment.center, children: [
+                            SizedBox(
+                              width: 40,
+                              height: 40,
+                              child: CircularProgressIndicator(
+                                value: _armProgress,
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                                backgroundColor: const Color(0x33FFFFFF),
+                              ),
+                            ),
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: const BoxDecoration(color: Color(0x8C000000), shape: BoxShape.circle),
+                              child: const Icon(Icons.lock, size: 16, color: Colors.white),
+                            ),
+                          ]),
+                        ),
                 ),
               ),
 
@@ -256,22 +403,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
               ),
 
-            // Faint outline on hover so the transparent window can be found.
-            if (transparent)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _hover ? 1 : 0,
-                    duration: const Duration(milliseconds: 250),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0x8CFFFFFF), width: 1.5),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ]);
 
           // Normal mode: rounded window. Transparent mode: nothing but the tree.

@@ -20,11 +20,12 @@ class SceneTitleBar extends StatelessWidget {
     required this.onSettings,
     required this.onPopOut,
     required this.onTransparent,
+    required this.onLock,
   });
 
   final String title, subtitle;
   final bool transparent, panelOpen;
-  final VoidCallback onSettings, onPopOut, onTransparent;
+  final VoidCallback onSettings, onPopOut, onTransparent, onLock;
 
   static const height = 40.0;
 
@@ -76,6 +77,7 @@ class SceneTitleBar extends StatelessWidget {
                   style: const TextStyle(fontSize: 13, color: kText),
                 ),
               ),
+              _IconBtn(icon: Icons.lock_outline, tooltip: 'Lock — clicks go to the apps behind (L)', onTap: onLock),
               _IconBtn(icon: Icons.layers_clear_outlined, tooltip: 'Transparent background (T)', on: transparent, onTap: onTransparent),
               _IconBtn(icon: Icons.open_in_new, tooltip: 'Open this view in a new window (N)', onTap: onPopOut),
               _IconBtn(icon: Icons.settings_outlined, tooltip: 'Settings (,)', on: panelOpen, onTap: onSettings),

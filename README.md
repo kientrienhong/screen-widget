@@ -50,6 +50,8 @@ While it works you see each step with a spinner, elapsed time, the line the comp
 | Crop to a size | Settings → Size & crop: pick a preset or type W × H and press Apply |
 | Frame the crop | Settings → Size & crop → Zoom / Move scene up/down |
 | Open a view in its own window | Pop-out button, the ↗ on a view card, or `N` |
+| Lock (clicks go to the apps behind) | Title-bar lock button, Settings → Window, or `L` |
+| Unlock | `⌃⌥L` (macOS) / `Ctrl+Alt+L` (Windows) from any app, or rest the cursor on the window's top-right corner until **Unlock** appears |
 | Settings | Gear button, right-click the scene, or `,` |
 | Move the window | Drag anywhere on the scene or title bar |
 

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'settings.dart';
@@ -35,14 +36,46 @@ class Desktop {
 
   static Future<void> setAlwaysOnTop(bool v) => windowManager.setAlwaysOnTop(v);
 
+  /// Click-through: when true, the window ignores the mouse and clicks reach
+  /// the apps behind it. Keyboard and the global unlock shortcut still work.
+  static Future<void> setClickThrough(bool v) => windowManager.setIgnoreMouseEvents(v);
+
+  /// Label for the global lock/unlock shortcut.
+  static String get lockShortcutLabel => Platform.isMacOS ? '⌃⌥L' : 'Ctrl+Alt+L';
+
   /// The window background is always clear; in normal mode the painter fills
   /// it with the scene, in transparent mode only the tree is drawn so the
   /// real desktop shows through.
   static Future<void> setTransparent(bool v) async {
     await windowManager.setBackgroundColor(Colors.transparent);
-    await windowManager.setHasShadow(!v);
     if (Platform.isMacOS) {
-      await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: !v);
+      if (v) {
+        await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: false);
+        await _setMacClearMode(true); // borderless: no frame edge, corners or shadow
+      } else {
+        await _setMacClearMode(false);
+        await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: true);
+        await windowManager.setHasShadow(true);
+      }
+    } else if (Platform.isWindows) {
+      if (v) {
+        await windowManager.setAsFrameless(); // no border or shadow
+        await windowManager.setHasShadow(false);
+      } else {
+        await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+        await windowManager.setHasShadow(true);
+      }
+    }
+  }
+
+  static const _macWindow = MethodChannel('screen_widget/window');
+
+  static Future<void> _setMacClearMode(bool on) async {
+    try {
+      await _macWindow.invokeMethod('setClearMode', on);
+    } on MissingPluginException {
+      // Older runner without the channel: fall back to just hiding the shadow.
+      await windowManager.setHasShadow(!on);
     }
   }
 
