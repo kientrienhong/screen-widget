@@ -115,6 +115,15 @@ if ($SkipAnalyze) {
   Invoke-Step 4 'analyze' 'Checking code' 'flutter analyze --no-fatal-infos --no-fatal-warnings'
 }
 
+# A running copy locks screen_widget.exe (the build would fail) and would keep
+# showing the old version, so close it (and any pop-out windows) first.
+$running = Get-Process -Name 'screen_widget' -ErrorAction SilentlyContinue
+if ($running) {
+  Write-Host '  Closing the running Screen Widget...' -ForegroundColor DarkGray
+  $running | Stop-Process -Force
+  Start-Sleep -Milliseconds 800
+}
+
 Invoke-Step 5 "compile_$Mode" "Compiling ($Mode)" "flutter build windows --$Mode" `
   'If the log mentions Visual Studio: install Visual Studio with the "Desktop development with C++" workload.'
 

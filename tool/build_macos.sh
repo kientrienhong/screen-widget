@@ -115,6 +115,18 @@ check_tools() {
   flutter config --enable-macos-desktop
 }
 
+# `open` only brings an already-running copy to the front, so quit any running
+# Screen Widget (including pop-out windows) first; otherwise you'd keep seeing the old build.
+launch_app() {
+  if pgrep -x screen_widget >/dev/null; then
+    echo "Closing the running Screen Widget…"
+    pkill -x screen_widget || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -x screen_widget >/dev/null || break; sleep 0.3; done
+    pkill -9 -x screen_widget 2>/dev/null || true
+  fi
+  open -n "$1"
+}
+
 compile() {
   bash tool/fix_macos_target.sh
   flutter build macos "--$MODE"
@@ -149,7 +161,7 @@ APP=$(ls -d build/macos/Build/Products/$CONFIG/*.app 2>/dev/null | head -n 1)
 if [ "$MODE" = release ]; then
   run_step 6 reveal "Opening in Finder" open -R "$APP"
 else
-  run_step 6 launch "Launching app" open "$APP"
+  run_step 6 launch "Launching app" launch_app "$APP"
 fi
 
 TOTAL_EL=$(( $(date +%s) - BUILD_START ))
