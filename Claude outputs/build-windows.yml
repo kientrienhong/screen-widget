@@ -1,0 +1,42 @@
+# Builds the Windows app on GitHub's Windows machines, so you can get a .exe
+# without a Windows PC. Run it from the repo's Actions tab ("Run workflow"),
+# or push a tag like v1.0.0. Download the zip from the run's "Artifacts".
+name: Build Windows .exe
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Windows runner (if not committed)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path windows\runner)) {
+            flutter create --platforms=windows --project-name screen_widget --org com.harley .
+          }
+
+      - run: flutter pub get
+
+      - run: flutter build windows --release
+
+      - name: Zip the app folder
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem build\windows -Recurse -Filter screen_widget.exe | Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
+          Compress-Archive -Path (Join-Path $exe.DirectoryName '*') -DestinationPath ScreenWidget-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenWidget-windows
+          path: ScreenWidget-windows.zip
