@@ -1,21 +1,36 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'config_store.dart';
 import 'scenes.dart';
 
-/// All user settings, persisted with shared_preferences.
+/// All user settings for one window. Saved to that window's own file (see
+/// [ConfigStore]) and restored the next time it opens.
 class AppSettings extends ChangeNotifier {
-  AppSettings._(this._prefs, this.solo);
+  AppSettings._(this._store, this.solo, this.windowId);
 
-  static const _key = 'screen_widget.settings.v1';
+  /// Where older versions kept the settings (shared_preferences); read once to migrate.
+  static const _legacyKey = 'screen_widget.settings.v1';
 
-  final SharedPreferences _prefs;
+  final ConfigStore _store;
+  Timer? _saveTimer;
 
-  /// True for a window opened with "Open in new window". Such windows show
-  /// their own scene and never overwrite the main window's scene choice.
+  /// True for a window opened with "Open in new window". Each such window keeps
+  /// its own settings, position and scene.
   final bool solo;
+
+  /// Id of a pop-out window (null for the main window).
+  final String? windowId;
+
+  /// UI language: 'vi' (default) or 'en'.
+  String language = 'vi';
+
+  /// Last window position and size (logical pixels), restored at start-up.
+  Rect? windowBounds;
 
   String scene = kScenes.first.id;
   double density = 55; // 0..100 %
@@ -39,19 +54,40 @@ class AppSettings extends ChangeNotifier {
   double zoom = 1.0;
   double panY = 0.0;
 
-  static Future<AppSettings> load({bool solo = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    final s = AppSettings._(prefs, solo);
-    final raw = prefs.getString(_key);
-    if (raw != null) {
+  /// Loads this window's settings. For a pop-out, returns null if that
+  /// pop-out is already open in another process.
+  static Future<AppSettings?> load({bool solo = false, String? windowId}) async {
+    final store = solo ? ConfigStore.forPopout(windowId ?? ConfigStore.newPopoutId()) : ConfigStore.forMain();
+    if (solo && !store.hold()) return null;
+    final s = AppSettings._(store, solo, solo ? windowId : null);
+
+    var data = store.read();
+    if (data == null && solo) {
+      // A new pop-out starts from the main window's settings (not its position or lock).
+      data = ConfigStore.forMain().read()?..remove('window')..remove('locked');
+    }
+    data ??= await _readLegacy();
+    if (data != null) {
       try {
-        s._fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        s._fromJson(data);
       } catch (_) {
         // Corrupt or old settings: keep defaults.
       }
     }
     if (sceneById(s.scene) == null) s.scene = kScenes.first.id;
+    if (s.language != 'en') s.language = 'vi';
+    s._writeNow(); // a new pop-out is listed straight away, so it's restored even after a crash
     return s;
+  }
+
+  static Future<Map<String, dynamic>?> _readLegacy() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_legacyKey);
+      return raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Change one or more values, repaint listeners and save.
@@ -78,6 +114,14 @@ class AppSettings extends ChangeNotifier {
         'viewHeight': viewHeight,
         'zoom': zoom,
         'panY': panY,
+        'language': language,
+        if (windowBounds != null)
+          'window': {
+            'x': windowBounds!.left,
+            'y': windowBounds!.top,
+            'w': windowBounds!.width,
+            'h': windowBounds!.height,
+          },
       };
 
   void _fromJson(Map<String, dynamic> m) {
@@ -97,19 +141,45 @@ class AppSettings extends ChangeNotifier {
     viewHeight = (m['viewHeight'] as num?)?.toDouble() ?? viewHeight;
     zoom = ((m['zoom'] as num?)?.toDouble() ?? zoom).clamp(0.6, 2.0).toDouble();
     panY = ((m['panY'] as num?)?.toDouble() ?? panY).clamp(-0.3, 0.3).toDouble();
-  }
-
-  void _save() {
-    final m = toJson();
-    if (solo) {
-      // Keep the main window's scene; a pop-out window only shows its own.
-      final raw = _prefs.getString(_key);
-      if (raw != null) {
-        try {
-          m['scene'] = (jsonDecode(raw) as Map<String, dynamic>)['scene'];
-        } catch (_) {}
+    language = m['language'] as String? ?? language;
+    final w = m['window'];
+    if (w is Map) {
+      final x = (w['x'] as num?)?.toDouble(), y = (w['y'] as num?)?.toDouble();
+      final ww = (w['w'] as num?)?.toDouble(), hh = (w['h'] as num?)?.toDouble();
+      if (x != null && y != null && ww != null && hh != null && ww > 0 && hh > 0) {
+        windowBounds = Rect.fromLTWH(x, y, ww, hh);
       }
     }
-    _prefs.setString(_key, jsonEncode(m));
+  }
+
+  /// Saves shortly after the last change (sliders fire many changes per second).
+  void _save() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 400), _writeNow);
+  }
+
+  void _writeNow() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _store.write(toJson());
+  }
+
+  /// Remember where the window is; saved without repainting anything.
+  void saveWindowBounds(Rect r) {
+    if (r == windowBounds) return;
+    windowBounds = r;
+    _save();
+  }
+
+  /// Write any pending change now (call before the window closes).
+  void flush() {
+    if (_saveTimer != null) _writeNow();
+  }
+
+  /// Forget this pop-out completely (the user closed it on purpose).
+  void forget() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _store.delete();
   }
 }

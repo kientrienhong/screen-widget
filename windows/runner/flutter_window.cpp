@@ -27,14 +27,11 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
-  });
-
-  // Flutter can complete the first frame before the "show window" callback is
-  // registered. The following call ensures a frame is pending to ensure the
-  // window is shown. It is a no-op if the first frame hasn't completed yet.
-  flutter_controller_->ForceRedraw();
+  // The window starts hidden. Dart (lib/main.dart) shows it once the window
+  // has its final size, position and frame style AND the first real frame has
+  // been painted. Showing it here as well made two owners fight over the
+  // window: it popped up at the default size, then jumped, and sometimes it
+  // was shown before anything was drawn (an invisible window in the taskbar).
 
   return true;
 }

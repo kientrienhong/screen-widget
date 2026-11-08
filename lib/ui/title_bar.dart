@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../i18n.dart';
 import 'controls.dart';
 
 /// Custom title bar drawn over the scene (the native one is hidden).
@@ -21,11 +22,16 @@ class SceneTitleBar extends StatelessWidget {
     required this.onPopOut,
     required this.onTransparent,
     required this.onLock,
+    required this.onClose,
   });
 
   final String title, subtitle;
   final bool transparent, panelOpen;
   final VoidCallback onSettings, onPopOut, onTransparent, onLock;
+
+  /// Saves and closes the window. Used instead of windowManager.close(), which
+  /// on macOS does nothing for a borderless (transparent-mode) window.
+  final VoidCallback onClose;
 
   static const height = 40.0;
 
@@ -55,9 +61,9 @@ class SceneTitleBar extends StatelessWidget {
               if (mac && !transparent) const SizedBox(width: 78), // native traffic lights
               if (mac && transparent) ...[
                 const SizedBox(width: 12),
-                _Dot(color: const Color(0xFFFF5F57), tooltip: 'Close', onTap: () => windowManager.close()),
+                _Dot(color: const Color(0xFFFF5F57), tooltip: tr('Close'), onTap: onClose),
                 const SizedBox(width: 8),
-                _Dot(color: const Color(0xFFFEBC2E), tooltip: 'Minimise', onTap: () => windowManager.minimize()),
+                _Dot(color: const Color(0xFFFEBC2E), tooltip: tr('Minimise'), onTap: () => windowManager.minimize()),
                 const SizedBox(width: 14),
               ],
               if (!mac) ...[
@@ -77,10 +83,10 @@ class SceneTitleBar extends StatelessWidget {
                   style: const TextStyle(fontSize: 13, color: kText),
                 ),
               ),
-              _IconBtn(icon: Icons.lock_outline, tooltip: 'Lock — clicks go to the apps behind (L)', onTap: onLock),
-              _IconBtn(icon: Icons.layers_clear_outlined, tooltip: 'Transparent background (T)', on: transparent, onTap: onTransparent),
-              _IconBtn(icon: Icons.open_in_new, tooltip: 'Open this view in a new window (N)', onTap: onPopOut),
-              _IconBtn(icon: Icons.settings_outlined, tooltip: 'Settings (,)', on: panelOpen, onTap: onSettings),
+              _IconBtn(icon: Icons.lock_outline, tooltip: tr('Lock — clicks go to the apps behind (L)'), onTap: onLock),
+              _IconBtn(icon: Icons.layers_clear_outlined, tooltip: tr('Transparent background (T)'), on: transparent, onTap: onTransparent),
+              _IconBtn(icon: Icons.open_in_new, tooltip: tr('Open this view in a new window (N)'), onTap: onPopOut),
+              _IconBtn(icon: Icons.settings_outlined, tooltip: tr('Settings (,)'), on: panelOpen, onTap: onSettings),
               if (mac) const SizedBox(width: 8),
               if (!mac) ...[
                 const SizedBox(width: 6),
@@ -95,7 +101,7 @@ class SceneTitleBar extends StatelessWidget {
                     }
                   },
                 ),
-                _CaptionBtn(icon: Icons.close, close: true, onTap: () => windowManager.close()),
+                _CaptionBtn(icon: Icons.close, close: true, onTap: onClose),
               ],
             ]),
           ),

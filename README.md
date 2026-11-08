@@ -22,6 +22,7 @@ cd screen-widget
 cd screen-widget
 powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1            # debug build, then launch
 powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release   # release build, then open its folder
+powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release -Installer   # + build\installer\ScreenWidget-Setup.exe (needs Inno Setup 6)
 ```
 
 While it works you see each step with a spinner, elapsed time, the line the compiler is on, and an overall progress bar:
@@ -87,5 +88,8 @@ The settings panel, shortcuts and pop-out windows pick it up automatically.
 ## Notes
 
 - **Transparent background:** the window itself is see-through (macOS: `MainFlutterWindow.swift`; Windows: `window_manager`), so the real desktop shows behind the tree.
-- **Pop-out windows** start a second copy of the app with `SCREEN_WIDGET_SOLO=1` and `SCREEN_WIDGET_SCENE=<id>`. Because of this and the launch-at-login LaunchAgent, the macOS App Sandbox is turned off by the setup script.
+- **Pop-out windows** start a second copy of the app with `SCREEN_WIDGET_SOLO=1`, `SCREEN_WIDGET_WINDOW=<id>` and `SCREEN_WIDGET_SCENE=<scene>`. Because of this and the launch-at-login LaunchAgent, the macOS App Sandbox is turned off by the setup script.
 - **Image resolution:** the bundled images are preview resolution (about 500–1000 px). For crisp results on large screens, replace them with the full-resolution originals from Magnific under the same file names.
+- **Saved configuration:** each window saves its settings, position and size to its own file (`%APPDATA%\ScreenWidget` on Windows, `~/Library/Application Support/ScreenWidget` on macOS; see `lib/config_store.dart`). Pop-outs that were open when the app closed are reopened at the next start; a pop-out you close yourself is forgotten.
+- **Language:** Vietnamese by default, English in Settings → Ngôn ngữ. All UI text goes through `tr()` in `lib/i18n.dart`.
+- **Windows installer:** `windows/installer/screen_widget.iss` (Inno Setup) packs the release folder into one `ScreenWidget-Setup.exe`, with an option (on by default) to open the app when you sign in to Windows.

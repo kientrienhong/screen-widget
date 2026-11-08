@@ -4,13 +4,15 @@
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1                debug build, then launch
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release       release build, then open its folder
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release -Zip  release build + build\ScreenWidget-windows.zip
+    powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Release -Installer  release build + build\installer\ScreenWidget-Setup.exe
+                                                                                 (needs Inno Setup 6: winget install JRSoftware.InnoSetup)
     powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -SkipAnalyze
 
   Every step's full output goes to build\logs\<step>.log. The % shown for a
   step is estimated from how long that step took last time (first build: elapsed time only).
   Works in Windows PowerShell 5.1 and PowerShell 7.
 #>
-param([switch]$Release, [switch]$Zip, [switch]$SkipAnalyze)
+param([switch]$Release, [switch]$Zip, [switch]$Installer, [switch]$SkipAnalyze)
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -144,6 +146,31 @@ Write-Progress -Activity $Activity -Completed
 if (-not $exe) {
   Write-Result 'FAIL' 'Red' 6 'Launching app' 'could not find screen_widget.exe under build\windows'
   exit 1
+}
+if ($Release) {
+  # Ship the Visual C++ runtime next to the exe, so it starts on PCs without it.
+  foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+    $src = Join-Path $env:SystemRoot "System32\$dll"
+    if (Test-Path $src) { Copy-Item $src $exe.DirectoryName -Force }
+  }
+}
+if ($Installer) {
+  $iscc = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if (-not $iscc) {
+    Write-Result 'FAIL' 'Red' 6 'Building installer' 'Inno Setup 6 not found. Install it with: winget install JRSoftware.InnoSetup'
+    exit 1
+  }
+  $version = ((Select-String -Path 'pubspec.yaml' -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value)
+  & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$($exe.DirectoryName)" 'windows\installer\screen_widget.iss'
+  if ($LASTEXITCODE -ne 0) {
+    Write-Result 'FAIL' 'Red' 6 'Building installer' "ISCC failed (exit $LASTEXITCODE)"
+    exit $LASTEXITCODE
+  }
+  Write-Result 'OK' 'Green' 6 'Building installer' 'build\installer\ScreenWidget-Setup.exe'
 }
 if ($Zip) {
   # The .exe needs the DLLs and data\ folder next to it, so ship the whole folder.

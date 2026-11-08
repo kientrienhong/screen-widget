@@ -12,6 +12,7 @@ import '../assets_loader.dart';
 import '../desktop.dart';
 import '../engine/scene_painter.dart';
 import '../engine/world.dart';
+import '../i18n.dart';
 import '../scenes.dart';
 import '../settings.dart';
 import 'settings_panel.dart';
@@ -26,7 +27,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin, WindowListener {
   late final World _world = World(widget.settings, widget.assets);
   late final Ticker _ticker;
   final _focus = FocusNode();
@@ -61,13 +62,73 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _ticker = createTicker(_onTick)..start();
     s.addListener(_onSettings);
     _registerLockShortcut();
+    windowManager.addListener(this);
+    windowManager.setPreventClose(true); // so onWindowClose can save first
     if (s.locked) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _setLocked(true));
     }
   }
 
+  // ---- Remember the window's place ----
+  Timer? _boundsTimer;
+
+  // "move"/"resize" also fire for changes the app makes itself (crop presets);
+  // "moved"/"resized" fire when the user finishes dragging. Saving is debounced.
+  @override
+  void onWindowMove() => _queueSaveBounds();
+
+  @override
+  void onWindowMoved() => _queueSaveBounds();
+
+  @override
+  void onWindowResize() => _queueSaveBounds();
+
+  @override
+  void onWindowResized() => _queueSaveBounds();
+
+  void _queueSaveBounds() {
+    _boundsTimer?.cancel();
+    _boundsTimer = Timer(const Duration(milliseconds: 300), _saveBounds);
+  }
+
+  Future<void> _saveBounds() async {
+    try {
+      // A minimised or maximised window has no useful "normal" position to restore.
+      if (await windowManager.isMinimized() || await windowManager.isMaximized()) return;
+      s.saveWindowBounds(await windowManager.getBounds());
+    } catch (_) {}
+  }
+
+  /// Native close (red button, Alt+F4, Cmd+W): close-prevention sends it here.
+  @override
+  void onWindowClose() => _closeWindow();
+
+  bool _closing = false;
+
+  /// Save, then end this window's process. Every close goes through here, so
+  /// it works the same for normal, borderless and transparent windows.
+  Future<void> _closeWindow() async {
+    if (_closing) return;
+    _closing = true;
+    try {
+      _boundsTimer?.cancel();
+      await _saveBounds().timeout(const Duration(seconds: 1), onTimeout: () {});
+      if (s.solo) {
+        s.forget(); // closed on purpose: don't reopen this pop-out next time
+      } else {
+        s.flush();
+      }
+    } catch (_) {
+      // Never let a failed save keep the window open.
+    } finally {
+      await windowManager.destroy();
+    }
+  }
+
   @override
   void dispose() {
+    windowManager.removeListener(this);
+    _boundsTimer?.cancel();
     _ticker.dispose();
     s.removeListener(_onSettings);
     _toastTimer?.cancel();
@@ -117,14 +178,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> _popOut(String id) async {
     final ok = await Desktop.openSceneWindow(id);
-    _showToast(ok ? 'Opened “${sceneById(id)!.name}” in a new window' : 'Could not open a new window');
+    _showToast(ok ? tr('Opened “{0}” in a new window', [sceneName(sceneById(id)!)]) : tr('Could not open a new window'));
   }
 
   Future<void> _setTransparent(bool v) async {
     s.update((x) => x.transparent = v);
     _world.clearLanded();
     await Desktop.setTransparent(v);
-    _showToast(v ? 'Transparent background — only the tree and its animation' : 'Scene background on');
+    _showToast(v ? tr('Transparent background — only the tree and its animation') : tr('Scene background on'));
   }
 
   Future<void> _setAlwaysOnTop(bool v) async {
@@ -137,7 +198,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (ok) {
       s.update((x) => x.launchAtLogin = v);
     } else {
-      _showToast('Could not change launch at login');
+      _showToast(tr('Could not change launch at login'));
     }
   }
 
@@ -167,8 +228,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Desktop.setClickThrough(v);
     if (v) _lockPoll = Timer.periodic(const Duration(milliseconds: _pollMs), (_) => _pollCursor());
     _showToast(v
-        ? 'Locked — clicks go to the apps behind. Unlock: ${Desktop.lockShortcutLabel} or hover the top-right corner'
-        : 'Unlocked');
+        ? tr('Locked — clicks go to the apps behind. Unlock: {0} or hover the top-right corner', [Desktop.lockShortcutLabel])
+        : tr('Unlocked'));
   }
 
   /// While locked, watch the cursor (the window itself gets no mouse events):
@@ -218,7 +279,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       x.viewHeight = h;
     });
     await Desktop.resizeTo(w, h);
-    _showToast('View cropped to ${w.round()} × ${h.round()}');
+    _queueSaveBounds();
+    _showToast(tr('View cropped to {0} × {1}', [w.round(), h.round()]));
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
@@ -291,10 +353,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 duration: const Duration(milliseconds: 250),
                 child: SceneTitleBar(
                   title: 'Screen Widget',
-                  subtitle: sc.name,
+                  subtitle: sceneName(sc),
                   transparent: transparent,
                   panelOpen: _panelOpen,
                   onLock: () => _setLocked(true),
+                  onClose: _closeWindow,
                   onSettings: () => _setPanel(!_panelOpen),
                   onPopOut: () => _popOut(s.scene),
                   onTransparent: () => _setTransparent(!transparent),
@@ -354,12 +417,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                           child: InkWell(
                             onTap: () => _setLocked(false),
                             borderRadius: BorderRadius.circular(20),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.lock_open, size: 16, color: Colors.white),
-                                SizedBox(width: 6),
-                                Text('Unlock', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                                const Icon(Icons.lock_open, size: 16, color: Colors.white),
+                                const SizedBox(width: 6),
+                                Text(tr('Unlock'), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                               ]),
                             ),
                           ),

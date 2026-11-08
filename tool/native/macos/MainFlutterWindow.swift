@@ -56,6 +56,19 @@ class MainFlutterWindow: NSWindow {
     invalidateShadow()
   }
 
+  // A borderless window (transparent mode) has no close button, so AppKit's
+  // performClose just beeps. Run the normal close check (window_manager's
+  // windowShouldClose, which tells Flutter) and close if it's allowed.
+  override func performClose(_ sender: Any?) {
+    if styleMask.contains(.closable) {
+      super.performClose(sender)
+      return
+    }
+    if delegate?.windowShouldClose?(self) ?? true {
+      close()
+    }
+  }
+
   // Borderless windows can't take keyboard focus by default; keep shortcuts working.
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { true }

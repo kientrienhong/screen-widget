@@ -25,8 +25,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
+  // Same as the default size in lib/main.dart, so Flutter's surface isn't
+  // created at one size and immediately rebuilt at another.
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
+  Win32Window::Size size(960, 660);
   if (!window.Create(L"screen_widget", origin, size)) {
     return EXIT_FAILURE;
   }

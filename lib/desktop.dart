@@ -3,9 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'config_store.dart';
 import 'settings.dart';
+import 'win_run_key.dart';
 
 /// Size presets for "Size & crop".
 class SizePreset {
@@ -95,14 +98,29 @@ class Desktop {
   }
 
   /// Opens a view in its own window by starting a second copy of the app.
-  /// The scene is passed through environment variables, which works the same
-  /// on macOS and Windows.
-  static Future<bool> openSceneWindow(String sceneId) async {
+  /// The scene and the window's id go through environment variables, which
+  /// works the same on macOS and Windows.
+  static Future<bool> openSceneWindow(String sceneId) =>
+      _startPopout(ConfigStore.newPopoutId(), sceneId: sceneId);
+
+  /// Reopens the pop-out windows that were open when the app last ran
+  /// (skipping any that are still open).
+  static Future<void> restorePopouts() async {
+    for (final id in ConfigStore.savedPopoutIds()) {
+      if (!ConfigStore.isPopoutRunning(id)) await _startPopout(id);
+    }
+  }
+
+  static Future<bool> _startPopout(String id, {String? sceneId}) async {
     try {
       await Process.start(
         Platform.resolvedExecutable,
         const [],
-        environment: {'SCREEN_WIDGET_SOLO': '1', 'SCREEN_WIDGET_SCENE': sceneId},
+        environment: {
+          'SCREEN_WIDGET_SOLO': '1',
+          'SCREEN_WIDGET_WINDOW': id,
+          if (sceneId != null) 'SCREEN_WIDGET_SCENE': sceneId,
+        },
         mode: ProcessStartMode.detached,
       );
       return true;
@@ -111,17 +129,41 @@ class Desktop {
     }
   }
 
+  /// True if a good part of [r] (the title-bar area) is on a connected screen,
+  /// so a saved position isn't restored onto a monitor that's gone.
+  static Future<bool> isOnScreen(Rect r) async {
+    try {
+      final grab = Rect.fromLTWH(r.left + 20, r.top, math.max(40.0, r.width - 40), 40);
+      for (final d in await screenRetriever.getAllDisplays()) {
+        final pos = d.visiblePosition ?? Offset.zero;
+        final size = d.visibleSize ?? d.size;
+        final area = (pos & size).intersect(grab);
+        if (area.width >= 40 && area.height >= 20) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Whether "Launch at login" is really on in the OS, or null if unknown.
+  static Future<bool?> isLaunchAtLoginEnabled() async {
+    try {
+      if (Platform.isWindows) return WinRunKey.has(appName);
+      if (Platform.isMacOS) {
+        final home = Platform.environment['HOME'];
+        if (home == null) return null;
+        return File('$home/Library/LaunchAgents/$_bundleId.plist').exists();
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Start the app when the user logs in.
   /// Windows: HKCU Run key. macOS: a LaunchAgent in ~/Library/LaunchAgents.
   static Future<bool> setLaunchAtLogin(bool enable) async {
     final exe = Platform.resolvedExecutable;
     try {
       if (Platform.isWindows) {
-        const key = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
-        final r = enable
-            ? await Process.run('reg', ['add', key, '/v', appName, '/t', 'REG_SZ', '/d', '"$exe"', '/f'])
-            : await Process.run('reg', ['delete', key, '/v', appName, '/f']);
-        return r.exitCode == 0 || !enable;
+        return enable ? WinRunKey.set(appName, '"$exe"') : WinRunKey.remove(appName);
       }
       if (Platform.isMacOS) {
         final home = Platform.environment['HOME'];

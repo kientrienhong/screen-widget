@@ -1,6 +1,7 @@
 # Builds the Windows app on GitHub's Windows machines, so you can get a .exe
 # without a Windows PC. Run it from the repo's Actions tab ("Run workflow"),
-# or push a tag like v1.0.0. Download the zip from the run's "Artifacts".
+# or push a tag like v1.0.0. The run's "Artifacts" has ScreenWidget-Setup.exe
+# (one-file installer) and the zipped app folder.
 name: Build Windows .exe
 
 on:
@@ -30,11 +31,32 @@ jobs:
 
       - run: flutter build windows --release
 
-      - name: Zip the app folder
+      - name: Add the Visual C++ runtime DLLs
+        # So the app also starts on PCs that don't have the VC++ redistributable.
         shell: pwsh
         run: |
           $exe = Get-ChildItem build\windows -Recurse -Filter screen_widget.exe | Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
-          Compress-Archive -Path (Join-Path $exe.DirectoryName '*') -DestinationPath ScreenWidget-windows.zip
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item (Join-Path $env:SystemRoot "System32\$dll") $exe.DirectoryName -Force
+          }
+          "RELEASE_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $version = ((Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value)
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DSourceDir=$env:RELEASE_DIR" windows\installer\screen_widget.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Zip the app folder
+        shell: pwsh
+        run: Compress-Archive -Path (Join-Path $env:RELEASE_DIR '*') -DestinationPath ScreenWidget-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenWidget-Setup
+          path: build/installer/ScreenWidget-Setup.exe
 
       - uses: actions/upload-artifact@v4
         with:

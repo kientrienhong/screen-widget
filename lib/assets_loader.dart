@@ -38,12 +38,14 @@ class SceneAssets {
     }
     await Future.wait(paths.map((p) async => a._images[p] = await _decode(p)));
 
-    for (final s in kScenes) {
-      a._blurred[s.sprite] ??= await _blur(a._images[s.sprite]!, 6);
-      if (!s.snow) a.canopy[s.id] = await _canopyPoints(a._images[s.tree]!, s.canopyEnd);
-    }
-    a.glowWarm = await _glow(const Color(0xFFFFC86E));
-    a.glowStar = await _glow(const Color(0xFFFFE6A0));
+    final sprites = kScenes.map((s) => s.sprite).toSet();
+    await Future.wait([
+      for (final p in sprites) _blur(a._images[p]!, 6).then((img) => a._blurred[p] = img),
+      for (final s in kScenes)
+        if (!s.snow) _canopyPoints(a._images[s.tree]!, s.canopyEnd).then((pts) => a.canopy[s.id] = pts),
+      _glow(const Color(0xFFFFC86E)).then((img) => a.glowWarm = img),
+      _glow(const Color(0xFFFFE6A0)).then((img) => a.glowStar = img),
+    ]);
 
     try {
       final json = jsonDecode(await rootBundle.loadString('assets/trees/tree_xmas_lights.json')) as Map<String, dynamic>;
