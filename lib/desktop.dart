@@ -41,7 +41,19 @@ class Desktop {
 
   /// Click-through: when true, the window ignores the mouse and clicks reach
   /// the apps behind it. Keyboard and the global unlock shortcut still work.
-  static Future<void> setClickThrough(bool v) => windowManager.setIgnoreMouseEvents(v);
+  static Future<void> setClickThrough(bool v) async {
+    if (v && Platform.isWindows) {
+      // window_manager makes the window click-through by giving it the
+      // WS_EX_LAYERED style, and Windows doesn't draw a layered window until
+      // its opacity is set. Without this the window turns invisible (still in
+      // the taskbar) the moment it's locked, and at start-up if it was closed
+      // while locked. setOpacity(1) sets that opacity: fully visible. It runs
+      // first, so the window is never layered without an opacity, not even
+      // for one frame.
+      await windowManager.setOpacity(1.0);
+    }
+    await windowManager.setIgnoreMouseEvents(v);
+  }
 
   /// Label for the global lock/unlock shortcut.
   static String get lockShortcutLabel => Platform.isMacOS ? '⌃⌥L' : 'Ctrl+Alt+L';
